@@ -1,0 +1,12 @@
+# Build output
+/meandr
+/dist/
+
+# Local, untracked build overrides
+/Makefile.local
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
