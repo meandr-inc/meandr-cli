@@ -1,0 +1,63 @@
+name: Release
+
+# Tags cut releases, not merges. The version comes from `git describe`,
+# so an untagged merge would publish something like v1.0.0-3-gabc1234 or
+# re-publish a version that already exists. Merge develop into main, then
+# tag main.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # creating the release and uploading its assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags: the version is stamped from
+          # `git describe`, which a shallow clone cannot answer.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # A tag on a commit that never reached main is a release nobody
+      # reviewed. Cheap to check, and the failure is clearer here than in
+      # a bug report.
+      - name: Tag must be on main
+        run: |
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::${GITHUB_REF_NAME} is not an ancestor of main"
+            exit 1
+          fi
+
+      - run: go vet ./...
+      - run: go test ./...
+
+      # ENDPOINT is the Makefile default (production). Makefile.local is
+      # untracked, so a developer's override cannot reach a release.
+      - run: make release
+
+      - name: Verify the version was stamped from the tag
+        run: |
+          ./dist/meandr-linux-amd64 version || true
+          got=$(./dist/meandr-linux-amd64 version | awk '{print $2}')
+          if [ "$got" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::binary reports '$got', tag is '${GITHUB_REF_NAME}'"
+            exit 1
+          fi
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            dist/meandr-* dist/SHA256SUMS dist/LICENSE dist/NOTICE
