@@ -11,8 +11,34 @@ It opens no listening socket. Every connection is outbound.
 
 ## Install
 
-Download a binary from the [releases page](https://github.com/meandr-inc/meandr-cli/releases),
-or build from source:
+Every release ships prebuilt binaries on the
+[releases page](https://github.com/meandr-inc/meandr-cli/releases). Pick the
+one for your machine:
+
+| Your machine | File |
+| --- | --- |
+| macOS, Apple silicon | `meandr-darwin-arm64` |
+| macOS, Intel | `meandr-darwin-amd64` |
+| Linux, x86-64 | `meandr-linux-amd64` |
+| Linux, ARM64 | `meandr-linux-arm64` |
+
+Or fetch the latest directly — this link always resolves to the newest
+release, so it does not go stale:
+
+```
+curl -fsSL -o meandr https://github.com/meandr-inc/meandr-cli/releases/latest/download/meandr-darwin-arm64
+chmod +x meandr && sudo mv meandr /usr/local/bin/
+```
+
+Each release also carries `SHA256SUMS`, so you can verify what you
+downloaded:
+
+```
+curl -fsSL -O https://github.com/meandr-inc/meandr-cli/releases/latest/download/SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing
+```
+
+### From source
 
 ```
 git clone https://github.com/meandr-inc/meandr-cli
@@ -20,8 +46,8 @@ cd meandr-cli
 make && sudo make install
 ```
 
-Building needs only a Go toolchain (1.25 or later). There are no cgo
-dependencies, so the resulting binary runs on any Linux or macOS host.
+Needs only a Go toolchain (1.25 or later). There are no cgo dependencies, so
+the binary runs on any Linux or macOS host.
 
 ## Quick start
 
