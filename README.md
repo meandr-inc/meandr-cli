@@ -22,6 +22,15 @@ one for your machine:
 | Linux, x86-64 | `meandr-linux-amd64` |
 | Linux, ARM64 | `meandr-linux-arm64` |
 
+A file downloaded from that page is not executable, and macOS marks it
+quarantined. Clear both, then install it:
+
+```
+chmod +x meandr-darwin-arm64
+xattr -d com.apple.quarantine meandr-darwin-arm64   # macOS only
+sudo mv meandr-darwin-arm64 /usr/local/bin/meandr
+```
+
 Or fetch the latest directly — this link always resolves to the newest
 release, so it does not go stale:
 
