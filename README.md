@@ -35,16 +35,21 @@ Or fetch the latest directly — this link always resolves to the newest
 release, so it does not go stale:
 
 ```
-curl -fsSL -o meandr https://github.com/meandr-inc/meandr-cli/releases/latest/download/meandr-darwin-arm64
-chmod +x meandr && sudo mv meandr /usr/local/bin/
+curl -fsSL -O https://github.com/meandr-inc/meandr-cli/releases/latest/download/meandr-darwin-arm64
 ```
 
-Each release also carries `SHA256SUMS`, so you can verify what you
-downloaded:
+Each release also carries `SHA256SUMS`. Verify before you install, while the
+file still has the name the checksums list it under:
 
 ```
 curl -fsSL -O https://github.com/meandr-inc/meandr-cli/releases/latest/download/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
+```
+
+Then install it:
+
+```
+chmod +x meandr-darwin-arm64 && sudo mv meandr-darwin-arm64 /usr/local/bin/meandr
 ```
 
 ### From source
