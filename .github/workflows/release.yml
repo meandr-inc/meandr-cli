@@ -44,10 +44,12 @@ jobs:
       # untracked, so a developer's override cannot reach a release.
       - run: make release
 
+      # `version` prints a second line for the endpoint, so take the
+      # first — awk over both fields would compare the endpoint too.
       - name: Verify the version was stamped from the tag
         run: |
-          ./dist/meandr-linux-amd64 version || true
-          got=$(./dist/meandr-linux-amd64 version | awk '{print $2}')
+          ./dist/meandr-linux-amd64 version
+          got=$(./dist/meandr-linux-amd64 version | head -1 | awk '{print $2}')
           if [ "$got" != "${GITHUB_REF_NAME}" ]; then
             echo "::error::binary reports '$got', tag is '${GITHUB_REF_NAME}'"
             exit 1
