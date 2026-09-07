@@ -148,6 +148,11 @@ func (c *Child) Attach(ctx context.Context, stream io.ReadWriter) error {
 		_, err := io.Copy(stdin, stream)
 		_ = stdin.Close()
 		inDone <- err
+
+		// The stream is gone, so nothing will read whatever the process
+		// writes next. Otherwise, run on until yamux resets the stream five
+		// minutes later, reporting an error.
+		_ = c.Stop()
 	}()
 
 	// process → stream. This direction decides when the session is over.
@@ -225,9 +230,9 @@ func (c *Child) stop() error {
 	if err, done := reaped(exited); done {
 		return err
 	}
-	slog.Warn("no exit on stdin close; terminating",
-		slog.Int("pid", cmd.Process.Pid),
-		slog.Duration("waited", stopGrace))
+	// Unlogged: plenty of servers hold a timer and cannot exit on stdin
+	// close, so signalling them is the ordinary path. The stop line says
+	// the process is gone, which is all anyone needs.
 	terminateGroup(cmd)
 
 	select {
