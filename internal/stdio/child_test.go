@@ -93,6 +93,37 @@ func TestChildDiesWithTheStream(t *testing.T) {
 	}
 }
 
+// The previous test's `cat` exits when stdin closes, so it passes either
+// way. This one does not: a server that ignores stdin close and says
+// nothing must still be stopped when its stream goes.
+func TestChildStoppedWhenTheStreamGoesThoughItIgnoresStdin(t *testing.T) {
+	skipOnWindows(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Ignores stdin, never writes: a server with a timer, in miniature.
+	c := New(Config{Command: "sh", Args: []string{"-c", "while true; do sleep 1; done"}})
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pid := c.cmd.Process.Pid
+
+	ours, theirs := net.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- c.Attach(ctx, theirs) }()
+
+	_ = ours.Close()
+
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("Attach waited on a silent stdout instead of stopping the child")
+	}
+	if processAlive(pid) {
+		t.Errorf("child %d still running after its stream closed", pid)
+	}
+}
+
 // A server that dies during startup explains itself on stderr and
 // nowhere else.
 func TestStderrTailKeptForDiagnosis(t *testing.T) {
