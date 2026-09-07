@@ -55,6 +55,11 @@ jobs:
             exit 1
           fi
 
+      # The installer is the trust root for `curl | sh`, so it ships from
+      # the same tag as the binaries it verifies rather than from a branch.
+      - name: The installer must be syntactically valid
+        run: sh -n install.sh
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -62,4 +67,4 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
-            dist/meandr-* dist/SHA256SUMS dist/LICENSE dist/NOTICE
+            dist/meandr-* dist/SHA256SUMS dist/LICENSE dist/NOTICE install.sh

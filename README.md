@@ -11,6 +11,24 @@ It opens no listening socket. Every connection is outbound.
 
 ## Install
 
+```
+curl -fsSL https://github.com/meandr-inc/meandr-cli/releases/latest/download/install.sh | sh
+```
+
+It picks the binary for your machine, checks it against the release's
+`SHA256SUMS`, and installs it to `/usr/local/bin` — or to `~/.local/bin` on a
+host where that would need a `sudo` you do not have. Two knobs:
+
+```
+curl -fsSL https://github.com/meandr-inc/meandr-cli/releases/latest/download/install.sh \
+  | MEANDR_VERSION=v0.1.0 MEANDR_INSTALL_DIR="$HOME/bin" sh
+```
+
+The script is [`install.sh`](install.sh) in this repository, published from
+the same tag as the binaries it verifies. Read it before you run it.
+
+### Manually
+
 Every release ships prebuilt binaries on the
 [releases page](https://github.com/meandr-inc/meandr-cli/releases). Pick the
 one for your machine:
@@ -22,34 +40,28 @@ one for your machine:
 | Linux, x86-64 | `meandr-linux-amd64` |
 | Linux, ARM64 | `meandr-linux-arm64` |
 
-A file downloaded from that page is not executable, and macOS marks it
-quarantined. Clear both, then install it:
-
-```
-chmod +x meandr-darwin-arm64
-xattr -d com.apple.quarantine meandr-darwin-arm64   # macOS only
-sudo mv meandr-darwin-arm64 /usr/local/bin/meandr
-```
-
-Or fetch the latest directly — this link always resolves to the newest
-release, so it does not go stale:
+Download it alongside `SHA256SUMS` and verify before installing, while the
+file still has the name the checksums list it under. These links always
+resolve to the newest release, so they do not go stale:
 
 ```
 curl -fsSL -O https://github.com/meandr-inc/meandr-cli/releases/latest/download/meandr-darwin-arm64
-```
-
-Each release also carries `SHA256SUMS`. Verify before you install, while the
-file still has the name the checksums list it under:
-
-```
 curl -fsSL -O https://github.com/meandr-inc/meandr-cli/releases/latest/download/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
-Then install it:
+A downloaded file carries no executable bit, so set it and move it into
+place:
 
 ```
 chmod +x meandr-darwin-arm64 && sudo mv meandr-darwin-arm64 /usr/local/bin/meandr
+```
+
+If you fetched it with a browser rather than `curl`, macOS also marks it
+quarantined, and Gatekeeper will refuse to run it until you clear that:
+
+```
+xattr -d com.apple.quarantine /usr/local/bin/meandr
 ```
 
 ### From source
