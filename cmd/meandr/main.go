@@ -14,6 +14,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	// A fallback for when the host has no CA bundle.
+	_ "golang.org/x/crypto/x509roots/fallback"
+
 	"github.com/meandr-inc/meandr-cli/internal/config"
 	"github.com/meandr-inc/meandr-cli/internal/version"
 )
