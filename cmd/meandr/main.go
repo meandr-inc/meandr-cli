@@ -11,8 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	// A fallback for when the host has no CA bundle.
 	_ "golang.org/x/crypto/x509roots/fallback"
@@ -40,19 +38,14 @@ func run(args []string) int {
 		return exitUsage
 	}
 
-	// A second signal is left to the default handler, so Ctrl-C twice
-	// always ends the process.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	cmd, rest := args[0], args[1:]
 
 	var err error
 	switch cmd {
 	case "tunnel":
-		err = runTunnel(ctx, rest)
+		err = runTunnel(context.Background(), rest)
 	case "configure":
-		err = runConfigure(ctx, rest)
+		err = runConfigure(context.Background(), rest)
 	case "version", "--version", "-v":
 		fmt.Println(version.String())
 		fmt.Printf("edge %s\n", Endpoint())

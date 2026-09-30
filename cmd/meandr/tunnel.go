@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/meandr-inc/meandr-cli/internal/config"
 	"github.com/meandr-inc/meandr-cli/internal/envurl"
@@ -21,6 +23,12 @@ var defaultEndpoint = "tun.meandr.io"
 func Endpoint() string { return defaultEndpoint }
 
 func runTunnel(ctx context.Context, args []string) error {
+	// The first signal starts the drain; the handler then goes, so a second
+	// reaches the default one and Ctrl-C twice always ends the process.
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	context.AfterFunc(ctx, stop)
+
 	fs := flag.NewFlagSet("tunnel", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
