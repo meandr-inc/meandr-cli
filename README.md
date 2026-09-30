@@ -165,10 +165,12 @@ has no opinion about protocol versions.
 ### Child processes
 
 The child is started in its own process group, so wrappers like `npx` that
-exec the real server as a grandchild are still stopped cleanly. Shutdown
-closes stdin first, then sends `SIGTERM`, then `SIGKILL`, with five seconds
-at each step. The child's most recent stderr lines are kept and reported if
-it fails.
+exec the real server as a grandchild are still stopped cleanly. Stopping a
+child closes its stdin, then sends `SIGTERM`, then `SIGKILL`, with five
+seconds at each step; when `meandr` itself is signalled, the `SIGTERM` comes
+at once. A second signal ends `meandr` without waiting for the rest, so a
+server that ignores both `SIGTERM` and a closed stdin is then left running.
+The child's most recent stderr lines are kept and reported if it fails.
 
 ## Usage
 
