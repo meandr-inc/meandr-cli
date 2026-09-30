@@ -32,7 +32,9 @@ func TestMain(m *testing.M) {
 // to reach it before it is signalled.
 const settle = 300 * time.Millisecond
 
-func TestCtrlCEndsConfigureAtThePrompt(t *testing.T) {
+// Stdin is a pipe, so configure blocks in the piped token read rather than
+// a terminal prompt; neither has a handler to catch the signal.
+func TestCtrlCEndsConfigureReadingTheToken(t *testing.T) {
 	c := startMeandr(t, "configure", "--id", "01a0-tunnel")
 	time.Sleep(settle)
 
@@ -52,9 +54,9 @@ func TestFirstSignalEndsTheTunnelCleanly(t *testing.T) {
 	}
 }
 
-// An edge that never answers the handshake holds the run for 30 s after
-// cancellation, as a slow drain would.
-func TestSecondSignalEndsADrainingTunnel(t *testing.T) {
+// Dial takes no context, so an edge that never answers the TLS handshake
+// keeps the tunnel shutting down for dialTimeout after the first signal.
+func TestSecondSignalEndsTheTunnelMidShutdown(t *testing.T) {
 	addr, dialled := fakeEdge(t, func(conn net.Conn) {
 		go func() { _, _ = io.Copy(io.Discard, conn); _ = conn.Close() }()
 	})
@@ -64,7 +66,7 @@ func TestSecondSignalEndsADrainingTunnel(t *testing.T) {
 	c.signal(t, os.Interrupt)
 	select {
 	case <-c.done:
-		t.Fatalf("the first signal ended the process (%v); want it to drain", c.err)
+		t.Fatalf("the first signal ended the process (%v); want the stuck dial to outlast it", c.err)
 	case <-time.After(settle):
 	}
 
