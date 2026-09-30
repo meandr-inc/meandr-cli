@@ -57,6 +57,31 @@ func TestAServerErrorIsRetried(t *testing.T) {
 	}
 }
 
+// Throttled is not refused: the answer is a moment away.
+func TestAThrottleIsRetried(t *testing.T) {
+	var calls atomic.Int32
+	url := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Write([]byte(`{"A":"1"}`))
+	})
+
+	if vars, err := fetcher().Fetch(context.Background(), url); err != nil || len(vars) != 1 {
+		t.Fatalf("fetch = %q, %v; want one variable after a retry", vars, err)
+	}
+}
+
+// A proxy from the environment never sees the variables. (Go never proxies
+// loopback, so a local server could not show it.)
+func TestTheClientIgnoresProxiesFromTheEnvironment(t *testing.T) {
+	transport, ok := (&Fetcher{}).client().Transport.(*http.Transport)
+	if !ok || transport.Proxy != nil {
+		t.Fatal("the client would honour HTTP_PROXY")
+	}
+}
+
 // A refusal will not change by asking again.
 func TestARefusalFailsAtOnce(t *testing.T) {
 	var calls atomic.Int32

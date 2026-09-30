@@ -38,8 +38,9 @@ type Fetcher struct {
 }
 
 // Fetch returns the variables as NAME=value, sorted by name. An unreachable
-// URL or a 5xx is retried until Patience runs out; any other answer fails at
-// once. Neither the URL nor a value is ever logged: either may be a secret.
+// URL, a 5xx or a 429 is retried until Patience runs out; any other answer
+// fails at once. Neither the URL nor a value is ever logged: either may be a
+// secret.
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string) ([]string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
@@ -83,7 +84,7 @@ func (f *Fetcher) once(ctx context.Context, rawURL string) ([]string, bool, erro
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= http.StatusInternalServerError {
+	if resp.StatusCode >= http.StatusInternalServerError || resp.StatusCode == http.StatusTooManyRequests {
 		return nil, true, fmt.Errorf("envurl: the URL answered %d", resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -106,11 +107,15 @@ func (f *Fetcher) once(ctx context.Context, rawURL string) ([]string, bool, erro
 	return vars, false, nil
 }
 
+// Never through a proxy: HTTP_PROXY baked into an image would get the
+// variables, or break the start.
 func (f *Fetcher) client() *http.Client {
 	if f.Client != nil {
 		return f.Client
 	}
-	return &http.Client{Timeout: attemptTimeout}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	return &http.Client{Timeout: attemptTimeout, Transport: transport}
 }
 
 func (f *Fetcher) patience() time.Duration {

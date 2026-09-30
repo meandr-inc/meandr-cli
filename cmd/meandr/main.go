@@ -105,7 +105,8 @@ TUNNEL FLAGS
   --env-url <url>     Load environment variables from this URL at start: a
                       JSON object of names to string values, treated as if
                       set in the environment, ahead of it. Retried for up to
-                      a minute while the URL is unreachable or answers 5xx.
+                      a minute while the URL is unreachable or answers 5xx
+                      or 429. Never through a proxy.
   --log-level <level> debug | info | warn | error. Default info.
   --log-format <fmt>  text | json. Default text.
 
