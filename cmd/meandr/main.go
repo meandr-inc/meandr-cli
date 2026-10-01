@@ -11,8 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	// A fallback for when the host has no CA bundle.
 	_ "golang.org/x/crypto/x509roots/fallback"
@@ -40,19 +38,14 @@ func run(args []string) int {
 		return exitUsage
 	}
 
-	// A second signal is left to the default handler, so Ctrl-C twice
-	// always ends the process.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	cmd, rest := args[0], args[1:]
 
 	var err error
 	switch cmd {
 	case "tunnel":
-		err = runTunnel(ctx, rest)
+		err = runTunnel(context.Background(), rest)
 	case "configure":
-		err = runConfigure(ctx, rest)
+		err = runConfigure(context.Background(), rest)
 	case "version", "--version", "-v":
 		fmt.Println(version.String())
 		fmt.Printf("edge %s\n", Endpoint())
@@ -109,6 +102,11 @@ TUNNEL FLAGS
   --id <tunnel-id>    Tunnel to connect, as shown in the dashboard. Required.
   --endpoint <host>   Service address. Defaults to the address this binary
                       was built for, which "meandr version" prints.
+  --env-url <url>     Load environment variables from this URL at start: a
+                      JSON object of names to string values, treated as if
+                      set in the environment, ahead of it. Retried for up to
+                      a minute while the URL is unreachable or answers 5xx
+                      or 429. Never through a proxy.
   --log-level <level> debug | info | warn | error. Default info.
   --log-format <fmt>  text | json. Default text.
 
@@ -117,7 +115,7 @@ TUNNEL FLAGS
 CREDENTIALS
   Checked in order, first match wins:
 
-    MEANDR_AUTH_TOKEN       environment variable
+    MEANDR_AUTH_TOKEN       environment variable, or loaded with --env-url
     ~/.meandr/credentials   written by "meandr configure", keyed by tunnel id
 
   The MCP server inherits this process's environment, so MEANDR_AUTH_TOKEN

@@ -110,7 +110,7 @@ The token is read from the first of these that is set:
 
 | Source | Notes |
 | --- | --- |
-| `MEANDR_AUTH_TOKEN` | For containers and CI. Nothing is written to disk. |
+| `MEANDR_AUTH_TOKEN` | For containers and CI, set in the environment or loaded with `--env-url`. Nothing is written to disk. |
 | `~/.meandr/credentials` | Written by `meandr configure`, keyed by tunnel id. Mode 0600. |
 
 `MEANDR_AUTH_TOKEN` is removed from the environment before your MCP server is
@@ -165,10 +165,12 @@ has no opinion about protocol versions.
 ### Child processes
 
 The child is started in its own process group, so wrappers like `npx` that
-exec the real server as a grandchild are still stopped cleanly. Shutdown
-closes stdin first, then sends `SIGTERM`, then `SIGKILL`, with five seconds
-at each step. The child's most recent stderr lines are kept and reported if
-it fails.
+exec the real server as a grandchild are still stopped cleanly. Stopping a
+child closes its stdin, then sends `SIGTERM`, then `SIGKILL`, with five
+seconds at each step; when `meandr` itself is signalled, the `SIGTERM` comes
+at once. A second signal ends `meandr` without waiting for the rest, so a
+server that ignores both `SIGTERM` and a closed stdin is then left running.
+The child's most recent stderr lines are kept and reported if it fails.
 
 ## Usage
 
@@ -185,6 +187,7 @@ meandr help
 | --- | --- | --- |
 | `--id` | | Tunnel id, from the dashboard. Required by `tunnel`; `configure` prompts for it when absent. |
 | `--endpoint` | built in | Service address. `meandr version` prints the built-in value. |
+| `--env-url` | | Load environment variables at start: `GET` returning a JSON object of names to string values, treated as if set in the environment, ahead of it — the MCP server gets them, and a loaded `MEANDR_AUTH_TOKEN` authenticates the tunnel. Retried for up to a minute while unreachable or answering 5xx or 429; any other failure exits 1. Never through a proxy: `HTTP_PROXY` and `HTTPS_PROXY` are ignored. Neither the URL nor the values are logged. |
 | `--log-level` | `info` | `debug`, `info`, `warn`, `error`. |
 | `--log-format` | `text` | `text` or `json`. |
 

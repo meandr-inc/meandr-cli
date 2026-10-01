@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/meandr-inc/meandr-cli/internal/config"
+	"github.com/meandr-inc/meandr-cli/internal/envurl"
 	"github.com/meandr-inc/meandr-cli/internal/stdio"
 	"github.com/meandr-inc/meandr-cli/internal/tunnel"
 )
@@ -20,11 +23,18 @@ var defaultEndpoint = "tun.meandr.io"
 func Endpoint() string { return defaultEndpoint }
 
 func runTunnel(ctx context.Context, args []string) error {
+	// The first signal starts the drain; the handler then goes, so a second
+	// reaches the default one and Ctrl-C twice always ends the process.
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	context.AfterFunc(ctx, stop)
+
 	fs := flag.NewFlagSet("tunnel", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
 	tunnelID := fs.String("id", "", "tunnel ID, as shown in the dashboard")
 	endpoint := fs.String("endpoint", defaultEndpoint, "service address to connect to")
+	envURL := fs.String("env-url", "", "load extra environment variables for the MCP server from this URL")
 	logs := bindLogFlags(fs)
 
 	if err := fs.Parse(args); err != nil {
@@ -48,9 +58,23 @@ func runTunnel(ctx context.Context, args []string) error {
 		return err
 	}
 
-	token, err := config.Token(*tunnelID)
-	if err != nil {
-		return err
+	// Loaded variables count as set in this process's environment, ahead of
+	// it: a loaded token authenticates the tunnel like any other.
+	var env []string
+	if *envURL != "" {
+		var err error
+		if env, err = (&envurl.Fetcher{}).Fetch(ctx, *envURL); err != nil {
+			return err
+		}
+		slog.Info("environment loaded", slog.Int("variables", len(env)))
+	}
+
+	token, env := takeToken(env)
+	if token == "" {
+		var err error
+		if token, err = config.Token(*tunnelID); err != nil {
+			return err
+		}
 	}
 
 	// The MCP server inherits this process's environment. Clear the token
@@ -73,7 +97,7 @@ func runTunnel(ctx context.Context, args []string) error {
 			Token:    token,
 		},
 		Spawn: func(ctx context.Context) (tunnel.Child, error) {
-			child := stdio.New(stdio.Config{Command: command[0], Args: command[1:]})
+			child := stdio.New(stdio.Config{Command: command[0], Args: command[1:], Env: env})
 			if err := child.Start(ctx); err != nil {
 				return nil, err
 			}
@@ -81,4 +105,18 @@ func runTunnel(ctx context.Context, args []string) error {
 		},
 	}
 	return mgr.Run(ctx)
+}
+
+// takeToken removes the token from loaded variables and returns it.
+func takeToken(vars []string) (string, []string) {
+	var token string
+	kept := make([]string, 0, len(vars))
+	for _, v := range vars {
+		if value, ok := strings.CutPrefix(v, config.EnvToken+"="); ok {
+			token = strings.TrimSpace(value)
+			continue
+		}
+		kept = append(kept, v)
+	}
+	return token, kept
 }
