@@ -188,6 +188,7 @@ meandr help
 | `--id` | | Tunnel id, from the dashboard. Required by `tunnel`; `configure` prompts for it when absent. |
 | `--endpoint` | built in | Service address. `meandr version` prints the built-in value. |
 | `--env-url` | | Load environment variables at start: `GET` returning a JSON object of names to string values, treated as if set in the environment, ahead of it — the MCP server gets them, and a loaded `MEANDR_AUTH_TOKEN` authenticates the tunnel. Retried for up to a minute while unreachable or answering 5xx or 429; any other failure exits 1. Never through a proxy: `HTTP_PROXY` and `HTTPS_PROXY` are ignored. Neither the URL nor the values are logged. |
+| `--expand-env` | off | Expand `$NAME` and `${NAME}` in the MCP server's command from its environment, `--env-url`'s variables first — a secret can reach the server as an argument without being written into it. Unknown names stay as written; `$$` is a dollar. The command is logged as written. |
 | `--log-level` | `info` | `debug`, `info`, `warn`, `error`. |
 | `--log-format` | `text` | `text` or `json`. |
 

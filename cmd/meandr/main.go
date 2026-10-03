@@ -107,6 +107,9 @@ TUNNEL FLAGS
                       set in the environment, ahead of it. Retried for up to
                       a minute while the URL is unreachable or answers 5xx
                       or 429. Never through a proxy.
+  --expand-env        Expand $NAME and ${NAME} in the MCP server's command
+                      from its environment, --env-url's variables first.
+                      Unknown names stay as written; $$ is a dollar.
   --log-level <level> debug | info | warn | error. Default info.
   --log-format <fmt>  text | json. Default text.
 
