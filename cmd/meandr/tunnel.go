@@ -35,6 +35,7 @@ func runTunnel(ctx context.Context, args []string) error {
 	tunnelID := fs.String("id", "", "tunnel ID, as shown in the dashboard")
 	endpoint := fs.String("endpoint", defaultEndpoint, "service address to connect to")
 	envURL := fs.String("env-url", "", "load extra environment variables for the MCP server from this URL")
+	expandEnv := fs.Bool("expand-env", false, "expand $NAME and ${NAME} in the MCP server's command from its environment")
 	logs := bindLogFlags(fs)
 
 	if err := fs.Parse(args); err != nil {
@@ -85,10 +86,16 @@ func runTunnel(ctx context.Context, args []string) error {
 		}
 	}
 
+	// Logged as written: an expanded argument may carry a secret.
 	slog.Info("starting",
 		slog.String("tunnel", *tunnelID),
 		slog.String("endpoint", *endpoint),
 		slog.String("command", strings.Join(command, " ")))
+
+	argv := command
+	if *expandEnv {
+		argv = expandArgs(command, environLookup(env))
+	}
 
 	mgr := &tunnel.Manager{
 		Dialer: &tunnel.Dialer{
@@ -97,7 +104,7 @@ func runTunnel(ctx context.Context, args []string) error {
 			Token:    token,
 		},
 		Spawn: func(ctx context.Context) (tunnel.Child, error) {
-			child := stdio.New(stdio.Config{Command: command[0], Args: command[1:], Env: env})
+			child := stdio.New(stdio.Config{Command: argv[0], Args: argv[1:], Env: env})
 			if err := child.Start(ctx); err != nil {
 				return nil, err
 			}
