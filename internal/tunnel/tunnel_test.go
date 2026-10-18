@@ -96,6 +96,26 @@ func TestUpgradeSendsTheExpectedHeaders(t *testing.T) {
 	}
 }
 
+// A pty names its kind, so the service can refuse a token used with the
+// wrong command; a server's tunnel sends none, as released clis do.
+func TestUpgradeNamesAPTYsKind(t *testing.T) {
+	e := edgetest.Start(t)
+	d := dialerFor(t, e)
+
+	for _, kind := range []string{"", tunnel.KindPTY} {
+		d.Kind = kind
+		conn, _, err := d.Dial()
+		if err != nil {
+			t.Fatalf("Dial: %v", err)
+		}
+		_ = conn.Close()
+
+		if got := e.LastRequest().Header.Get("Meandr-Tunnel-Kind"); got != kind {
+			t.Errorf("Meandr-Tunnel-Kind = %q, want %q", got, kind)
+		}
+	}
+}
+
 func TestUpgradeReadsAdvice(t *testing.T) {
 	e := edgetest.Start(t)
 	e.Headers = map[string]string{
@@ -122,6 +142,7 @@ func TestFatalStatusesStopDialling(t *testing.T) {
 	}{
 		{"revoked token", 401},
 		{"unknown tunnel", 404},
+		{"wrong command for the tunnel", 409},
 		{"binary too old", 426},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

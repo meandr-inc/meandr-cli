@@ -1,6 +1,5 @@
-// Command meandr connects a locally-running MCP server to the meandr
-// service. It spawns the server as a child process and carries its stdio
-// session over an outbound tunnel.
+// Command meandr carries a local MCP server's stdio session, or a hosted
+// agent's PTY, to the meandr service over an outbound tunnel.
 //
 // It opens no listening socket. Every connection is outbound, so a host
 // running this needs no inbound firewall rule.
@@ -22,7 +21,7 @@ import (
 // Exit codes, distinct so a supervisor can tell what is worth a restart.
 const (
 	exitOK       = 0
-	exitRuntime  = 1 // ran, then failed: network, or the MCP server exited
+	exitRuntime  = 1 // ran, then failed: the service refused it, or pty's command did
 	exitUsage    = 2 // bad flags or bad configuration
 	exitNotFound = 3 // no credential for this tunnel
 )
@@ -44,6 +43,8 @@ func run(args []string) int {
 	switch cmd {
 	case "tunnel":
 		err = runTunnel(context.Background(), rest)
+	case "pty":
+		err = runPTY(context.Background(), rest)
 	case "configure":
 		err = runConfigure(context.Background(), rest)
 	case "version", "--version", "-v":
@@ -87,6 +88,7 @@ func usage(w *os.File) {
 USAGE
   meandr configure [--id <tunnel-id>]
   meandr tunnel --id <tunnel-id> [flags] -- <command> [args...]
+  meandr pty --id <tunnel-id> [flags] -- <command> [args...]
   meandr version
   meandr help
 
@@ -98,7 +100,11 @@ COMMANDS
   tunnel    Spawn the MCP server and hold the tunnel open until signalled.
             Runs in the foreground, for systemd or a container entrypoint.
 
-TUNNEL FLAGS
+  pty       For a hosted agent's tunnel: run the command on a PTY and attach
+            every session the dashboard opens to it. One process for
+            meandr's whole life; when it exits, meandr exits.
+
+TUNNEL AND PTY FLAGS
   --id <tunnel-id>    Tunnel to connect, as shown in the dashboard. Required.
   --endpoint <host>   Service address. Defaults to the address this binary
                       was built for, which "meandr version" prints.
@@ -107,8 +113,8 @@ TUNNEL FLAGS
                       set in the environment, ahead of it. Retried for up to
                       a minute while the URL is unreachable or answers 5xx
                       or 429. Never through a proxy.
-  --expand-env        Expand $NAME and ${NAME} in the MCP server's command
-                      from its environment, --env-url's variables first.
+  --expand-env        Expand $NAME and ${NAME} in the command from its
+                      environment, --env-url's variables first.
                       Unknown names stay as written; $$ is a dollar.
   --log-level <level> debug | info | warn | error. Default info.
   --log-format <fmt>  text | json. Default text.
@@ -121,12 +127,13 @@ CREDENTIALS
     MEANDR_AUTH_TOKEN       environment variable, or loaded with --env-url
     ~/.meandr/credentials   written by "meandr configure", keyed by tunnel id
 
-  The MCP server inherits this process's environment, so MEANDR_AUTH_TOKEN
+  The command inherits this process's environment, so MEANDR_AUTH_TOKEN
   is removed before spawning it.
 
 EXIT CODES
   0  clean exit, including shutdown on SIGINT or SIGTERM
-  1  runtime failure: network, or the MCP server exited
+  1  runtime failure: the service refused the tunnel, --env-url failed,
+     or pty's command exited with an error
   2  bad flags or bad configuration
   3  no credential found for this tunnel
 
