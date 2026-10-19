@@ -121,6 +121,11 @@ TUNNEL AND PTY FLAGS
 
   Both logging flags are accepted by "configure" too. Logs go to stderr.
 
+PTY FLAGS
+  --storage <dir>     Write files pasted into the dashboard's terminal into
+                      this directory, under the name the service gives each,
+                      and tell the dashboard where. Without it, none are taken.
+
 CREDENTIALS
   Checked in order, first match wins:
 

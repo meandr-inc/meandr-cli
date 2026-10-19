@@ -60,6 +60,7 @@ type startup struct {
 	token    string
 	argv     []string // the command, expanded with --expand-env
 	env      []string // --env-url's variables, the token taken out
+	storage  string   // pty: where pasted files go
 }
 
 // prepare parses the flags, installs the logger, loads --env-url and
@@ -72,6 +73,10 @@ func prepare(ctx context.Context, name string, args []string, example string) (*
 	endpoint := fs.String("endpoint", defaultEndpoint, "service address to connect to")
 	envURL := fs.String("env-url", "", "load extra environment variables for the command from this URL")
 	expandEnv := fs.Bool("expand-env", false, "expand $NAME and ${NAME} in the command from its environment")
+	storage := new(string)
+	if name == "pty" {
+		storage = fs.String("storage", "", "write files pasted into the terminal into this directory")
+	}
 	logs := bindLogFlags(fs)
 
 	if err := fs.Parse(args); err != nil {
@@ -131,7 +136,7 @@ func prepare(ctx context.Context, name string, args []string, example string) (*
 	if *expandEnv {
 		argv = expandArgs(command, environLookup(env))
 	}
-	return &startup{tunnelID: *tunnelID, endpoint: *endpoint, token: token, argv: argv, env: env}, nil
+	return &startup{tunnelID: *tunnelID, endpoint: *endpoint, token: token, argv: argv, env: env, storage: *storage}, nil
 }
 
 func (s *startup) dialer(kind string) *tunnel.Dialer {

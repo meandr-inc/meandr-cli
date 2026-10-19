@@ -10,6 +10,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// noFollow keeps a pasted file's partial file from being opened through a link.
+const noFollow = syscall.O_NOFOLLOW
+
 // The program leads a session of its own with the PTY as its controlling
 // terminal, so job control and SIGWINCH work as on any terminal.
 func setControllingTerminal(cmd *exec.Cmd) {

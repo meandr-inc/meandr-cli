@@ -12,6 +12,8 @@ import (
 // there; this package opens a PTY on Linux and macOS only.
 var errUnsupported = errors.New("pty: runs on Linux and macOS")
 
+const noFollow = 0
+
 func openPTY() (*os.File, *os.File, error)           { return nil, nil, errUnsupported }
 func setControllingTerminal(*exec.Cmd)               {}
 func setSize(*os.File, uint16, uint16) (bool, error) { return false, errUnsupported }

@@ -20,7 +20,7 @@ func runPTY(ctx context.Context, args []string) error {
 		return err
 	}
 
-	proc, err := pty.Start(pty.Config{Command: s.argv[0], Args: s.argv[1:], Env: s.env})
+	proc, err := pty.Start(pty.Config{Command: s.argv[0], Args: s.argv[1:], Env: s.env, Storage: s.storage})
 	if err != nil {
 		return err
 	}

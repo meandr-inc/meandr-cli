@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -36,7 +37,13 @@ type peer struct {
 
 	mu      sync.Mutex
 	out     bytes.Buffer // the program's output, unframed
+	answers []answer     // to pasted files
 	badKind byte         // a frame the cli should never send
+}
+
+type answer struct {
+	kind byte
+	text string
 }
 
 // attach attaches a stream whose output is read as it arrives.
@@ -56,20 +63,63 @@ func attachSilent(t *testing.T, p *Process) *peer {
 	return pr
 }
 
+// read takes the cli's frames: the program's output, and answers to files.
 func (pr *peer) read() {
-	fr := frameReader{r: pr.conn}
+	hdr := make([]byte, headerLen)
 	for {
-		f, err := fr.next()
-		if err != nil {
+		if _, err := io.ReadFull(pr.conn, hdr); err != nil {
+			return
+		}
+		b := make([]byte, binary.BigEndian.Uint32(hdr[1:]))
+		if _, err := io.ReadFull(pr.conn, b); err != nil {
 			return
 		}
 		pr.mu.Lock()
-		if f.kind == frameData {
-			pr.out.Write(f.data)
-		} else {
-			pr.badKind = f.kind
+		switch hdr[0] {
+		case frameData:
+			pr.out.Write(b)
+		case frameFileSaved, frameFileFailed:
+			pr.answers = append(pr.answers, answer{hdr[0], string(b)})
+		default:
+			pr.badKind = hdr[0]
 		}
 		pr.mu.Unlock()
+	}
+}
+
+// sendFile sends a pasted file in frames of at most chunk bytes.
+func (pr *peer) sendFile(name string, data []byte, chunk int) {
+	pr.t.Helper()
+	head := binary.BigEndian.AppendUint32(nil, uint32(len(data)))
+	if _, err := pr.conn.Write(newFrame(frameFile, append(head, name...))); err != nil {
+		pr.t.Fatalf("send file: %v", err)
+	}
+	for len(data) > 0 {
+		n := min(chunk, len(data))
+		if _, err := pr.conn.Write(newFrame(frameFileData, data[:n])); err != nil {
+			pr.t.Fatalf("send file data: %v", err)
+		}
+		data = data[n:]
+	}
+}
+
+func (pr *peer) awaitAnswer() answer {
+	pr.t.Helper()
+	deadline := time.Now().Add(within)
+	for {
+		pr.mu.Lock()
+		got, bad := pr.answers, pr.badKind
+		pr.mu.Unlock()
+		if bad != 0 {
+			pr.t.Fatalf("the cli sent a frame of type %d", bad)
+		}
+		if len(got) > 0 {
+			return got[0]
+		}
+		if time.Now().After(deadline) {
+			pr.t.Fatal("no answer to the pasted file")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -338,19 +388,176 @@ func TestStopEndsTheProgram(t *testing.T) {
 func TestFramesRoundTrip(t *testing.T) {
 	stream := append(dataFrame([]byte("hello")), frameResize, 0, 120, 0, 40)
 	stream = append(stream, dataFrame(nil)...)
+	stream = append(stream, newFrame(frameFile, append([]byte{0, 0, 1, 0}, "a.png"...))...)
+	stream = append(stream, newFrame(frameFileData, []byte("png"))...)
 	fr := frameReader{r: bytes.NewReader(stream)}
 
 	for _, want := range []frame{
 		{kind: frameData, data: []byte("hello")},
 		{kind: frameResize, cols: 120, rows: 40},
 		{kind: frameData, data: []byte{}},
+		{kind: frameFile, size: 256, name: "a.png"},
+		{kind: frameFileData, data: []byte("png")},
 	} {
 		got, err := fr.next()
 		if err != nil {
 			t.Fatalf("next: %v", err)
 		}
-		if got.kind != want.kind || !bytes.Equal(got.data, want.data) || got.cols != want.cols || got.rows != want.rows {
+		if got.kind != want.kind || !bytes.Equal(got.data, want.data) || got.cols != want.cols || got.rows != want.rows ||
+			got.size != want.size || got.name != want.name {
 			t.Fatalf("frame = %+v, want %+v", got, want)
 		}
+	}
+}
+
+func startWithStorage(t *testing.T, dir string) *Process {
+	t.Helper()
+	p, err := Start(Config{Command: "cat", Storage: dir})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Stop() })
+	return p
+}
+
+func TestAPastedFileLandsWholeAndTheAnswerSaysWhere(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "uploads")
+	v := attach(t, startWithStorage(t, dir))
+
+	data := bytes.Repeat([]byte("0123456789"), 15_000)
+	v.sendFile("k3x9-shot.png", data, maxData)
+	got := v.awaitAnswer()
+	want := filepath.Join(dir, "k3x9-shot.png")
+	if got.kind != frameFileSaved || got.text != want {
+		t.Fatalf("answer = %d %q, want saved %q", got.kind, got.text, want)
+	}
+	if b, err := os.ReadFile(want); err != nil || !bytes.Equal(b, data) {
+		t.Fatalf("the file holds %d bytes (%v), want %d", len(b), err, len(data))
+	}
+	if st, err := os.Stat(want); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %v (%v), want 0600", st.Mode().Perm(), err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("the directory holds %d entries, want the file alone", len(entries))
+	}
+
+	v.send("still typing\n")
+	v.await("still typing", 2)
+}
+
+func TestAnEmptyFileIsSavedAtOnce(t *testing.T) {
+	dir := t.TempDir()
+	v := attach(t, startWithStorage(t, dir))
+
+	v.sendFile("empty.txt", nil, maxData)
+	if got := v.awaitAnswer(); got.kind != frameFileSaved || got.text != filepath.Join(dir, "empty.txt") {
+		t.Fatalf("answer = %d %q, want saved", got.kind, got.text)
+	}
+}
+
+func TestAStreamEndingMidFileLeavesNoFile(t *testing.T) {
+	dir := t.TempDir()
+	p := startWithStorage(t, dir)
+	v := attach(t, p)
+
+	head := binary.BigEndian.AppendUint32(nil, 10)
+	if _, err := v.conn.Write(newFrame(frameFile, append(head, "half.bin"...))); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := v.conn.Write(newFrame(frameFileData, []byte("12345"))); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = v.conn.Close()
+	if err := v.result(); err != nil {
+		t.Fatalf("Attach = %v, want nil", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("the directory holds %v, want nothing", entries)
+	}
+	running(t, p)
+}
+
+// A name the proxy should never send is refused, and the stream goes on.
+func TestANameThatIsNoPlainFileIsRefused(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "uploads")
+	v := attach(t, startWithStorage(t, dir))
+
+	for i, name := range []string{"../evil.sh", "a/b.png", ".bashrc", ""} {
+		v.sendFile(name, []byte("x"), maxData)
+		deadline := time.Now().Add(within)
+		var a answer
+		for {
+			v.mu.Lock()
+			n := len(v.answers)
+			if n > i {
+				a = v.answers[i]
+			}
+			v.mu.Unlock()
+			if n > i {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%q: no answer", name)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if a.kind != frameFileFailed {
+			t.Fatalf("%q: answer = %d %q, want failed", name, a.kind, a.text)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "evil.sh")); err == nil {
+		t.Fatal("a file was written outside the directory")
+	}
+	v.send("still here\n")
+	v.await("still here", 2)
+}
+
+// The directory being a file stands for any write that fails.
+func TestAFileThatCannotBeWrittenIsAnsweredAndTheRestDropped(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "uploads")
+	if err := os.WriteFile(dir, nil, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	v := attach(t, startWithStorage(t, dir))
+
+	v.sendFile("shot.png", bytes.Repeat([]byte("x"), 100_000), maxData)
+	if got := v.awaitAnswer(); got.kind != frameFileFailed || got.text == "" {
+		t.Fatalf("answer = %d %q, want failed with a reason", got.kind, got.text)
+	}
+	v.send("after\n")
+	v.await("after", 2)
+}
+
+func TestFileFramesWithoutStorageEndTheStream(t *testing.T) {
+	p := start(t, "cat")
+	v := attach(t, p)
+
+	head := binary.BigEndian.AppendUint32(nil, 1)
+	if _, err := v.conn.Write(newFrame(frameFile, append(head, "shot.png"...))); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := v.result(); !errors.Is(err, errFrame) {
+		t.Fatalf("Attach = %v, want a bad frame", err)
+	}
+	running(t, p)
+}
+
+func TestFileDataPastItsFileEndsTheStream(t *testing.T) {
+	dir := t.TempDir()
+	v := attach(t, startWithStorage(t, dir))
+
+	head := binary.BigEndian.AppendUint32(nil, 3)
+	if _, err := v.conn.Write(newFrame(frameFile, append(head, "x.txt"...))); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := v.conn.Write(newFrame(frameFileData, []byte("12345"))); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := v.result(); !errors.Is(err, errFrame) {
+		t.Fatalf("Attach = %v, want a bad frame", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("the directory holds %v, want nothing", entries)
 	}
 }

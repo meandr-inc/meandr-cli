@@ -100,6 +100,22 @@ func TestPTYEndsWithItsCommand(t *testing.T) {
 	}
 }
 
+func TestOnlyPTYTakesStorage(t *testing.T) {
+	addr, _ := fakeEdge(t, func(conn net.Conn) { _ = conn.Close() })
+
+	c := startMeandr(t, "pty", "--id", "01a0-agent", "--endpoint", addr, "--storage", t.TempDir(), "--", "sh", "-c", "exit 0")
+	c.wait(t)
+	if code := c.cmd.ProcessState.ExitCode(); code != exitOK {
+		t.Fatalf("pty --storage: exit = %d, want %d; stderr:\n%s", code, exitOK, c.stderr.String())
+	}
+
+	c = startMeandr(t, "tunnel", "--id", "01a0-agent", "--endpoint", addr, "--storage", t.TempDir(), "--", "true")
+	c.wait(t)
+	if code := c.cmd.ProcessState.ExitCode(); code != exitUsage {
+		t.Fatalf("tunnel --storage: exit = %d, want %d", code, exitUsage)
+	}
+}
+
 func TestFirstSignalStopsThePTYsCommand(t *testing.T) {
 	addr, dialled := fakeEdge(t, func(conn net.Conn) { _ = conn.Close() })
 	pidFile := filepath.Join(t.TempDir(), "pid")

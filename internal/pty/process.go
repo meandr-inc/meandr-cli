@@ -45,15 +45,17 @@ type Config struct {
 	Args    []string
 	Env     []string // extra variables, appended to this process's environment
 	Dir     string
+	Storage string // where pasted files go; none are taken without it
 }
 
 // Process is the program on a PTY that is always read: with nobody
 // attached its output is dropped, so it never blocks on its screen.
 type Process struct {
-	name   string
-	cmd    *exec.Cmd
-	master *os.File
-	stall  time.Duration
+	name    string
+	cmd     *exec.Cmd
+	master  *os.File
+	stall   time.Duration
+	storage string
 
 	inMu   sync.Mutex // one viewer's input at a time
 	sizeMu sync.Mutex
@@ -110,6 +112,7 @@ func Start(cfg Config) (*Process, error) {
 		cmd:     cmd,
 		master:  master,
 		stall:   stallLimit,
+		storage: cfg.Storage,
 		viewers: map[*viewer]struct{}{},
 		done:    make(chan struct{}),
 	}
@@ -178,7 +181,7 @@ func (p *Process) Attach(ctx context.Context, stream io.ReadWriter) error {
 	}()
 	go v.output(stream)
 
-	err := p.input(stream)
+	err := p.input(v, stream)
 	v.end()
 	slog.Debug("pty session detached")
 
@@ -226,9 +229,16 @@ func (v *viewer) output(w io.Writer) {
 	}
 }
 
-// input hands one stream's frames to the program until the stream ends.
-func (p *Process) input(r io.Reader) error {
+// input hands one stream's frames to the program until the stream ends. A
+// pasted file goes to disk instead, and the stream gets the answer.
+func (p *Process) input(v *viewer, r io.Reader) error {
 	fr := frameReader{r: r}
+	var up *upload
+	defer func() {
+		if up != nil {
+			up.abort()
+		}
+	}()
 	for {
 		f, err := fr.next()
 		if err != nil {
@@ -241,10 +251,32 @@ func (p *Process) input(r io.Reader) error {
 			p.inMu.Unlock()
 		case frameResize:
 			err = p.resize(f.cols, f.rows)
+		case frameFile:
+			if p.storage == "" || up != nil {
+				return fmt.Errorf("%w: a file not taken here", errFrame)
+			}
+			up = startUpload(p.storage, f.name, int64(f.size))
+		case frameFileData:
+			if up == nil || int64(len(f.data)) > up.left {
+				return fmt.Errorf("%w: file data past its file", errFrame)
+			}
+			up.write(f.data)
 		}
 		if err != nil {
 			return err
 		}
+		if up != nil && up.left == 0 {
+			v.send(up.finish())
+			up = nil
+		}
+	}
+}
+
+// send queues a frame of the cli's own for the viewer, unless it has gone.
+func (v *viewer) send(f []byte) {
+	select {
+	case v.out <- f:
+	case <-v.gone:
 	}
 }
 
