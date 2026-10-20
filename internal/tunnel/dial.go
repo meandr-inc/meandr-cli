@@ -25,6 +25,10 @@ const (
 	// Protocol is the Upgrade token.
 	Protocol = "meandr-tunnel/1"
 
+	// KindPTY is a hosted agent's tunnel, which carries its PTY. A server's
+	// tunnel sends no kind, so released clis keep working.
+	KindPTY = "pty"
+
 	// dialTimeout bounds TCP connect, TLS, and the Upgrade exchange.
 	dialTimeout = 30 * time.Second
 
@@ -67,6 +71,7 @@ type Dialer struct {
 	TunnelID string // tunnel to connect, as shown in the dashboard
 	Token    string // bearer credential; never logged
 	Instance string // identifies this process across its connections
+	Kind     string // "" for a server's tunnel, or KindPTY
 
 	// RootCAs are trusted in place of the system roots. Nil, the normal
 	// case, uses the system roots. There is no way to skip verification.
@@ -120,6 +125,9 @@ func (d *Dialer) upgrade(conn net.Conn, host string) (Info, error) {
 	req.Header.Set("Authorization", "Bearer "+d.Token)
 	req.Header.Set("Meandr-Tunnel-Id", d.TunnelID)
 	req.Header.Set("Meandr-Tunnel-Instance", d.Instance)
+	if d.Kind != "" {
+		req.Header.Set("Meandr-Tunnel-Kind", d.Kind)
+	}
 	req.Header.Set("Meandr-Tunnel-Client",
 		fmt.Sprintf("%s (%s/%s)", version.UserAgent(), runtime.GOOS, runtime.GOARCH))
 
@@ -166,6 +174,10 @@ func statusToInfo(resp *http.Response) (Info, error) {
 		return Info{}, &Fatal{Status: resp.StatusCode,
 			Reason: fmt.Sprintf("this build is too old; the service requires %s",
 				resp.Header.Get("Upgrade"))}
+
+	case http.StatusConflict:
+		return Info{}, &Fatal{Status: resp.StatusCode,
+			Reason: "wrong command for this tunnel: an agent's tunnel runs `meandr pty`, a server's `meandr tunnel`"}
 
 	case http.StatusTooManyRequests:
 		// Another process probably holds the connection slots.
