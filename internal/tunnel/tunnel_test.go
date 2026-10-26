@@ -134,6 +134,23 @@ func TestUpgradeReadsAdvice(t *testing.T) {
 	}
 }
 
+// The service may write its first yamux frame with the 101; the bytes the
+// response's reader buffered past it must still reach the session.
+func TestBytesSentWithTheUpgradeReachTheConnection(t *testing.T) {
+	e := edgetest.Start(t)
+	e.After = []byte("first frame")
+	conn, _, err := dialerFor(t, e).Dial()
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	got := make([]byte, len(e.After))
+	if _, err := io.ReadFull(conn, got); err != nil || !bytes.Equal(got, e.After) {
+		t.Fatalf("read %q, %v; want %q", got, err, e.After)
+	}
+}
+
 // A revoked token must stop the cli dialling, not start a retry loop.
 func TestFatalStatusesStopDialling(t *testing.T) {
 	for _, tc := range []struct {

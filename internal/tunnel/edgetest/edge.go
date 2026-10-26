@@ -30,6 +30,9 @@ type Edge struct {
 	Status int
 	// Headers added to the response.
 	Headers map[string]string
+	// After is written in the same write as the 101, and then no yamux
+	// session starts, so a test reads the raw bytes.
+	After []byte
 
 	listener net.Listener
 	roots    *x509.CertPool
@@ -165,12 +168,15 @@ func (e *Edge) handshake(conn net.Conn) {
 	}
 	resp += "\r\n"
 
-	if _, err := conn.Write([]byte(resp)); err != nil {
+	if _, err := conn.Write(append([]byte(resp), e.After...)); err != nil {
 		_ = conn.Close()
 		return
 	}
 	if status != http.StatusSwitchingProtocols {
 		_ = conn.Close()
+		return
+	}
+	if e.After != nil {
 		return
 	}
 
