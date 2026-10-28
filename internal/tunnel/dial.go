@@ -105,19 +105,31 @@ func (d *Dialer) Dial() (net.Conn, Info, error) {
 		return nil, Info{}, fmt.Errorf("dial %s: %w", addr, err)
 	}
 
-	info, err := d.upgrade(conn, host)
+	info, br, err := d.upgrade(conn, host)
 	if err != nil {
 		_ = conn.Close()
 		return nil, Info{}, err
 	}
+	// The reader that read the 101 may already hold what followed it.
+	if br.Buffered() > 0 {
+		return &readerConn{Conn: conn, r: br}, info, nil
+	}
 	return conn, info, nil
 }
 
+// readerConn reads through the reader that read the Upgrade response.
+type readerConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (c *readerConn) Read(p []byte) (int, error) { return c.r.Read(p) }
+
 // upgrade performs the HTTP Upgrade exchange.
-func (d *Dialer) upgrade(conn net.Conn, host string) (Info, error) {
+func (d *Dialer) upgrade(conn net.Conn, host string) (Info, *bufio.Reader, error) {
 	req, err := http.NewRequest(http.MethodPost, "/", nil)
 	if err != nil {
-		return Info{}, fmt.Errorf("build upgrade request: %w", err)
+		return Info{}, nil, fmt.Errorf("build upgrade request: %w", err)
 	}
 	req.Host = host
 	req.Header.Set("Upgrade", Protocol)
@@ -133,12 +145,13 @@ func (d *Dialer) upgrade(conn net.Conn, host string) (Info, error) {
 
 	_ = conn.SetDeadline(time.Now().Add(dialTimeout))
 	if err := req.Write(conn); err != nil {
-		return Info{}, fmt.Errorf("write upgrade request: %w", err)
+		return Info{}, nil, fmt.Errorf("write upgrade request: %w", err)
 	}
 
-	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, req)
 	if err != nil {
-		return Info{}, fmt.Errorf("read upgrade response: %w", err)
+		return Info{}, nil, fmt.Errorf("read upgrade response: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -146,7 +159,8 @@ func (d *Dialer) upgrade(conn net.Conn, host string) (Info, error) {
 	// later close it.
 	_ = conn.SetDeadline(time.Time{})
 
-	return statusToInfo(resp)
+	info, err := statusToInfo(resp)
+	return info, br, err
 }
 
 func statusToInfo(resp *http.Response) (Info, error) {
