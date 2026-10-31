@@ -172,6 +172,13 @@ at once. A second signal ends `meandr` without waiting for the rest, so a
 server that ignores both `SIGTERM` and a closed stdin is then left running.
 The child's most recent stderr lines are kept and reported if it fails.
 
+In a container, as its first process (PID 1, or the child of an init such as
+Docker's `--init`), `meandr` also stops what its children leave behind. Once
+they have exited, every other process in the container gets `SIGTERM`, and
+`SIGKILL` 30 seconds later. A daemon a server started in a session of its own
+is stopped this way; otherwise it is killed outright when `meandr` exits and
+the container goes with it. Linux only.
+
 ### PTY
 
 `meandr pty` is for a hosted agent's tunnel. It runs one command on a PTY for
