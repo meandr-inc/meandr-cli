@@ -10,11 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	// A fallback for when the host has no CA bundle.
 	_ "golang.org/x/crypto/x509roots/fallback"
 
 	"github.com/meandr-inc/meandr-cli/internal/config"
+	"github.com/meandr-inc/meandr-cli/internal/container"
 	"github.com/meandr-inc/meandr-cli/internal/version"
 )
 
@@ -25,6 +27,10 @@ const (
 	exitUsage    = 2 // bad flags or bad configuration
 	exitNotFound = 3 // no credential for this tunnel
 )
+
+// restWait is how long what the command's processes left in a container gets
+// to stop once they have (container.StopRest).
+const restWait = 30 * time.Second
 
 func main() {
 	version.FromBuildInfo()
@@ -43,8 +49,10 @@ func run(args []string) int {
 	switch cmd {
 	case "tunnel":
 		err = runTunnel(context.Background(), rest)
+		container.StopRest(restWait)
 	case "pty":
 		err = runPTY(context.Background(), rest)
+		container.StopRest(restWait)
 	case "configure":
 		err = runConfigure(context.Background(), rest)
 	case "version", "--version", "-v":
