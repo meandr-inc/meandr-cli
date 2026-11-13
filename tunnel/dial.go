@@ -25,10 +25,6 @@ const (
 	// Protocol is the Upgrade token.
 	Protocol = "meandr-tunnel/1"
 
-	// KindPTY is a hosted agent's tunnel, which carries its PTY. A server's
-	// tunnel sends no kind, so released clis keep working.
-	KindPTY = "pty"
-
 	// dialTimeout bounds TCP connect, TLS, and the Upgrade exchange.
 	dialTimeout = 30 * time.Second
 
@@ -71,7 +67,8 @@ type Dialer struct {
 	TunnelID string // tunnel to connect, as shown in the dashboard
 	Token    string // bearer credential; never logged
 	Instance string // identifies this process across its connections
-	Kind     string // "" for a server's tunnel, or KindPTY
+	Kind     string // Meandr-Tunnel-Kind; a server's tunnel sends none
+	Client   string // Meandr-Tunnel-Client; empty is this cli's own
 
 	// RootCAs are trusted in place of the system roots. Nil, the normal
 	// case, uses the system roots. There is no way to skip verification.
@@ -140,8 +137,11 @@ func (d *Dialer) upgrade(conn net.Conn, host string) (Info, *bufio.Reader, error
 	if d.Kind != "" {
 		req.Header.Set("Meandr-Tunnel-Kind", d.Kind)
 	}
-	req.Header.Set("Meandr-Tunnel-Client",
-		fmt.Sprintf("%s (%s/%s)", version.UserAgent(), runtime.GOOS, runtime.GOARCH))
+	client := d.Client
+	if client == "" {
+		client = version.UserAgent()
+	}
+	req.Header.Set("Meandr-Tunnel-Client", fmt.Sprintf("%s (%s/%s)", client, runtime.GOOS, runtime.GOARCH))
 
 	_ = conn.SetDeadline(time.Now().Add(dialTimeout))
 	if err := req.Write(conn); err != nil {
@@ -191,7 +191,7 @@ func statusToInfo(resp *http.Response) (Info, error) {
 
 	case http.StatusConflict:
 		return Info{}, &Fatal{Status: resp.StatusCode,
-			Reason: "wrong command for this tunnel: an agent's tunnel runs `meandr pty`, a server's `meandr tunnel`"}
+			Reason: "wrong command for this tunnel: the token is a hosted agent's or app's, not a server's"}
 
 	case http.StatusTooManyRequests:
 		// Another process probably holds the connection slots.

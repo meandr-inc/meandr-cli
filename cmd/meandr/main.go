@@ -1,5 +1,5 @@
-// Command meandr carries a local MCP server's stdio session, or a hosted
-// agent's PTY, to the meandr service over an outbound tunnel.
+// Command meandr carries a local MCP server's stdio session to the meandr
+// service over an outbound tunnel.
 //
 // It opens no listening socket. Every connection is outbound, so a host
 // running this needs no inbound firewall rule.
@@ -10,27 +10,21 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	// A fallback for when the host has no CA bundle.
 	_ "golang.org/x/crypto/x509roots/fallback"
 
 	"github.com/meandr-inc/meandr-cli/internal/config"
-	"github.com/meandr-inc/meandr-cli/internal/container"
 	"github.com/meandr-inc/meandr-cli/internal/version"
 )
 
 // Exit codes, distinct so a supervisor can tell what is worth a restart.
 const (
 	exitOK       = 0
-	exitRuntime  = 1 // ran, then failed: the service refused it, or pty's command did
+	exitRuntime  = 1 // ran, then failed: the service refused it
 	exitUsage    = 2 // bad flags or bad configuration
 	exitNotFound = 3 // no credential for this tunnel
 )
-
-// restWait is how long what the command's processes left in a container gets
-// to stop once they have (container.StopRest).
-const restWait = 30 * time.Second
 
 func main() {
 	version.FromBuildInfo()
@@ -49,10 +43,6 @@ func run(args []string) int {
 	switch cmd {
 	case "tunnel":
 		err = runTunnel(context.Background(), rest)
-		container.StopRest(restWait)
-	case "pty":
-		err = runPTY(context.Background(), rest)
-		container.StopRest(restWait)
 	case "configure":
 		err = runConfigure(context.Background(), rest)
 	case "version", "--version", "-v":
@@ -96,7 +86,6 @@ func usage(w *os.File) {
 USAGE
   meandr configure [--id <tunnel-id>]
   meandr tunnel --id <tunnel-id> [flags] -- <command> [args...]
-  meandr pty --id <tunnel-id> [flags] -- <command> [args...]
   meandr version
   meandr help
 
@@ -108,36 +97,19 @@ COMMANDS
   tunnel    Spawn the MCP server and hold the tunnel open until signalled.
             Runs in the foreground, for systemd or a container entrypoint.
 
-  pty       For a hosted agent's tunnel: run the command on a PTY and attach
-            every session the dashboard opens to it. One process for
-            meandr's whole life; when it exits, meandr exits.
-
-TUNNEL AND PTY FLAGS
+TUNNEL FLAGS
   --id <tunnel-id>    Tunnel to connect, as shown in the dashboard. Required.
   --endpoint <host>   Service address. Defaults to the address this binary
                       was built for, which "meandr version" prints.
-  --env-url <url>     Load environment variables from this URL at start: a
-                      JSON object of names to string values, treated as if
-                      set in the environment, ahead of it. Retried for up to
-                      a minute while the URL is unreachable or answers 5xx
-                      or 429. Never through a proxy.
-  --expand-env        Expand $NAME and ${NAME} in the command from its
-                      environment, --env-url's variables first.
-                      Unknown names stay as written; $$ is a dollar.
   --log-level <level> debug | info | warn | error. Default info.
   --log-format <fmt>  text | json. Default text.
 
   Both logging flags are accepted by "configure" too. Logs go to stderr.
 
-PTY FLAGS
-  --storage <dir>     Write files pasted into the dashboard's terminal into
-                      this directory, under the name the service gives each,
-                      and tell the dashboard where. Without it, none are taken.
-
 CREDENTIALS
   Checked in order, first match wins:
 
-    MEANDR_AUTH_TOKEN       environment variable, or loaded with --env-url
+    MEANDR_AUTH_TOKEN       environment variable
     ~/.meandr/credentials   written by "meandr configure", keyed by tunnel id
 
   The command inherits this process's environment, so MEANDR_AUTH_TOKEN
@@ -145,8 +117,7 @@ CREDENTIALS
 
 EXIT CODES
   0  clean exit, including shutdown on SIGINT or SIGTERM
-  1  runtime failure: the service refused the tunnel, --env-url failed,
-     or pty's command exited with an error
+  1  runtime failure: the service refused the tunnel
   2  bad flags or bad configuration
   3  no credential found for this tunnel
 
