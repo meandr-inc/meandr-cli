@@ -110,7 +110,7 @@ The token is read from the first of these that is set:
 
 | Source | Notes |
 | --- | --- |
-| `MEANDR_AUTH_TOKEN` | For containers and CI, set in the environment or loaded with `--env-url`. Nothing is written to disk. |
+| `MEANDR_AUTH_TOKEN` | For containers and CI, set in the environment. Nothing is written to disk. |
 | `~/.meandr/credentials` | Written by `meandr configure`, keyed by tunnel id. Mode 0600. |
 
 `MEANDR_AUTH_TOKEN` is removed from the environment before your MCP server is
@@ -172,34 +172,11 @@ at once. A second signal ends `meandr` without waiting for the rest, so a
 server that ignores both `SIGTERM` and a closed stdin is then left running.
 The child's most recent stderr lines are kept and reported if it fails.
 
-In a container, as its first process (PID 1, or the child of an init such as
-Docker's `--init`), `meandr` also stops what its children leave behind. Once
-they have exited, every other process in the container gets `SIGTERM`, and
-`SIGKILL` 30 seconds later. A daemon a server started in a session of its own
-is stopped this way; otherwise it is killed outright when `meandr` exits and
-the container goes with it. Linux only.
-
-### PTY
-
-`meandr pty` is for a hosted agent's tunnel. It runs one command on a PTY for
-as long as `meandr` runs, started before the first connection. meandr's side
-opens a stream for each session the dashboard opens, and every stream attaches
-to that one process: its output goes to all of them, and any of them can type.
-A stream ending, or the tunnel dropping, leaves it running; when it exits,
-`meandr` exits too. With nobody attached its output is dropped, so it never
-blocks on its screen, and a session attaching later is shown the current
-screen, because the command is told to redraw. Nothing on the wire chooses what
-runs, and the bytes are never recorded or logged.
-
-The command gets `TERM=xterm-256color` unless its environment sets one. On a
-signal it gets `SIGTERM`, then `SIGKILL` five seconds later. Linux and macOS.
-
 ## Usage
 
 ```
 meandr configure [--id <tunnel-id>]
 meandr tunnel --id <tunnel-id> [flags] -- <command> [args...]
-meandr pty --id <tunnel-id> [flags] -- <command> [args...]
 meandr version
 meandr help
 ```
@@ -208,10 +185,8 @@ meandr help
 
 | Flag | Default | |
 | --- | --- | --- |
-| `--id` | | Tunnel id, from the dashboard. Required by `tunnel` and `pty`; `configure` prompts for it when absent. |
+| `--id` | | Tunnel id, from the dashboard. Required by `tunnel`; `configure` prompts for it when absent. |
 | `--endpoint` | built in | Service address. `meandr version` prints the built-in value. |
-| `--env-url` | | Load environment variables at start: `GET` returning a JSON object of names to string values, treated as if set in the environment, ahead of it — the command gets them, and a loaded `MEANDR_AUTH_TOKEN` authenticates the tunnel. Retried for up to a minute while unreachable or answering 5xx or 429; any other failure exits 1. Never through a proxy: `HTTP_PROXY` and `HTTPS_PROXY` are ignored. Neither the URL nor the values are logged. |
-| `--expand-env` | off | Expand `$NAME` and `${NAME}` in the command from its environment, `--env-url`'s variables first — a secret can reach it as an argument without being written into it. Unknown names stay as written; `$$` is a dollar. The command is logged as written. |
 | `--log-level` | `info` | `debug`, `info`, `warn`, `error`. |
 | `--log-format` | `text` | `text` or `json`. |
 
@@ -222,7 +197,7 @@ Logs go to stderr.
 | | |
 | --- | --- |
 | 0 | Clean exit, including shutdown on `SIGINT` or `SIGTERM`. |
-| 1 | Runtime failure: the service refused the tunnel, `--env-url` failed, or `pty`'s command exited with an error. |
+| 1 | Runtime failure: the service refused the tunnel. |
 | 2 | Bad flags or bad configuration. Retrying will not help. |
 | 3 | No credential found for this tunnel. |
 
@@ -249,8 +224,11 @@ The integration test drives a real MCP server and is opt-in, because it needs
 `npx` and network access:
 
 ```
-MEANDR_INTEGRATION=1 go test ./internal/stdio/ -run Integration -v
+MEANDR_INTEGRATION=1 go test ./stdio/ -run Integration -v
 ```
+
+The `tunnel` and `stdio` packages are importable for Meandr's own hosted
+runtime. Their API follows it and makes no promise to anyone else.
 
 Windows builds but is not a supported release target: there is no process
 group to signal, so a child is killed outright.

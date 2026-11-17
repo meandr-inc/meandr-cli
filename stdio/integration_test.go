@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meandr-inc/meandr-cli/internal/stdio"
+	"github.com/meandr-inc/meandr-cli/stdio"
 )
 
 // Drives a real MCP server through a real handshake over Attach. Opt-in,
 // since it needs npx and the network:
 //
-//	MEANDR_INTEGRATION=1 go test ./internal/stdio/ -run Integration -v
+//	MEANDR_INTEGRATION=1 go test ./stdio/ -run Integration -v
 //
 // The test parses MCP to check the pipe is transparent. The package
 // itself never does.

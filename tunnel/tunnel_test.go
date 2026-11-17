@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meandr-inc/meandr-cli/internal/tunnel"
-	"github.com/meandr-inc/meandr-cli/internal/tunnel/edgetest"
+	"github.com/meandr-inc/meandr-cli/tunnel"
+	"github.com/meandr-inc/meandr-cli/tunnel/edgetest"
 )
 
 // echoChild stands in for a spawned MCP server: it copies bytes back and
@@ -96,13 +96,13 @@ func TestUpgradeSendsTheExpectedHeaders(t *testing.T) {
 	}
 }
 
-// A pty names its kind, so the service can refuse a token used with the
-// wrong command; a server's tunnel sends none, as released clis do.
-func TestUpgradeNamesAPTYsKind(t *testing.T) {
+// A kind, when set, is named, so the service can refuse a token used with
+// the wrong command; a server's tunnel sends none, as released clis do.
+func TestUpgradeNamesTheKindWhenSet(t *testing.T) {
 	e := edgetest.Start(t)
 	d := dialerFor(t, e)
 
-	for _, kind := range []string{"", tunnel.KindPTY} {
+	for _, kind := range []string{"", "pty"} {
 		d.Kind = kind
 		conn, _, err := d.Dial()
 		if err != nil {
@@ -112,6 +112,29 @@ func TestUpgradeNamesAPTYsKind(t *testing.T) {
 
 		if got := e.LastRequest().Header.Get("Meandr-Tunnel-Kind"); got != kind {
 			t.Errorf("Meandr-Tunnel-Kind = %q, want %q", got, kind)
+		}
+	}
+}
+
+// An importer sends its own identifier; the cli's is the default.
+func TestUpgradeIdentifiesTheClient(t *testing.T) {
+	e := edgetest.Start(t)
+	d := dialerFor(t, e)
+
+	for _, client := range []string{"", "another-client/v1.4.0"} {
+		d.Client = client
+		conn, _, err := d.Dial()
+		if err != nil {
+			t.Fatalf("Dial: %v", err)
+		}
+		_ = conn.Close()
+
+		want := client
+		if want == "" {
+			want = "meandr-cli/"
+		}
+		if got := e.LastRequest().Header.Get("Meandr-Tunnel-Client"); !strings.HasPrefix(got, want) {
+			t.Errorf("Meandr-Tunnel-Client = %q, want it to start %q", got, want)
 		}
 	}
 }
